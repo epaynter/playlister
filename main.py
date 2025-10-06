@@ -10,7 +10,7 @@ class SpotifyPlaylistAdder:
     def __init__(self, root):
         self.root = root
         self.root.title("")
-        self.root.geometry("320x220")
+        self.root.geometry("320x260")
         self.root.attributes('-topmost', True)  # Always on top
         self.root.resizable(False, False)
 
@@ -28,6 +28,13 @@ class SpotifyPlaylistAdder:
         # Remove window decorations for sleek look
         self.root.overrideredirect(True)
 
+        # Additional macOS-specific styling to remove all chrome
+        try:
+            # Try to remove macOS title bar if overrideredirect didn't work
+            self.root.tk.call('::tk::unsupported::MacWindowStyle', 'style', self.root._w, 'plain', 'none')
+        except:
+            pass
+
         # Make window draggable
         self.root.bind('<Button-1>', self.start_move)
         self.root.bind('<B1-Motion>', self.do_move)
@@ -40,6 +47,7 @@ class SpotifyPlaylistAdder:
         self.playlists = []
         self.running = True
         self.last_added_track = None
+        self.track_in_playlist = False
 
         # Create UI first
         self.create_widgets()
@@ -105,17 +113,58 @@ class SpotifyPlaylistAdder:
                                     font=('SF Pro Display', 11), fg=self.fg_color,
                                     bg=self.bg_color, wraplength=280, justify=tk.LEFT,
                                     anchor='w')
-        self.track_label.pack(fill=tk.X, pady=(15, 20))
+        self.track_label.pack(fill=tk.X, pady=(15, 10))
+
+        # Playback controls (back, play/pause, next) - centered
+        controls_container = tk.Frame(main_frame, bg=self.bg_color)
+        controls_container.pack(fill=tk.X, pady=(0, 15))
+
+        controls_frame = tk.Frame(controls_container, bg=self.bg_color)
+        controls_frame.pack(anchor='center')
+
+        # Previous button
+        prev_btn = tk.Label(controls_frame, text="⏮",
+                           font=('SF Pro Display', 16),
+                           fg=self.secondary_fg, bg=self.bg_color,
+                           cursor='hand2')
+        prev_btn.pack(side=tk.LEFT, padx=8)
+        prev_btn.bind('<Button-1>', lambda e: self.previous_track())
+        prev_btn.bind('<Enter>', lambda e: prev_btn.config(fg=self.fg_color))
+        prev_btn.bind('<Leave>', lambda e: prev_btn.config(fg=self.secondary_fg))
+
+        # Play/Pause button
+        self.play_pause_btn = tk.Label(controls_frame, text="⏸",
+                                       font=('SF Pro Display', 18),
+                                       fg=self.fg_color, bg=self.bg_color,
+                                       cursor='hand2')
+        self.play_pause_btn.pack(side=tk.LEFT, padx=20)
+        self.play_pause_btn.bind('<Button-1>', lambda e: self.toggle_play_pause())
+        self.play_pause_btn.bind('<Enter>', lambda e: self.play_pause_btn.config(fg=self.accent_color))
+        self.play_pause_btn.bind('<Leave>', lambda e: self.play_pause_btn.config(fg=self.fg_color))
+
+        # Next button
+        next_btn = tk.Label(controls_frame, text="⏭",
+                           font=('SF Pro Display', 16),
+                           fg=self.secondary_fg, bg=self.bg_color,
+                           cursor='hand2')
+        next_btn.pack(side=tk.LEFT, padx=8)
+        next_btn.bind('<Button-1>', lambda e: self.next_track())
+        next_btn.bind('<Enter>', lambda e: next_btn.config(fg=self.fg_color))
+        next_btn.bind('<Leave>', lambda e: next_btn.config(fg=self.secondary_fg))
 
         # Playlist dropdown - custom implementation for better control
         self.playlist_var = tk.StringVar()
 
-        # Dropdown button that triggers menu
-        dropdown_container = tk.Frame(main_frame, bg=self.hover_color, height=38)
+        # Dropdown button that triggers menu (with border)
+        dropdown_container = tk.Frame(main_frame, bg=self.secondary_fg, height=38)
         dropdown_container.pack(fill=tk.X, pady=(0, 12))
         dropdown_container.pack_propagate(False)
 
-        self.playlist_button = tk.Label(dropdown_container,
+        # Inner frame for actual content (creates border effect)
+        inner_dropdown = tk.Frame(dropdown_container, bg=self.hover_color)
+        inner_dropdown.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
+
+        self.playlist_button = tk.Label(inner_dropdown,
                                        textvariable=self.playlist_var,
                                        font=('SF Pro Display', 10),
                                        fg=self.fg_color,
@@ -126,7 +175,7 @@ class SpotifyPlaylistAdder:
         self.playlist_button.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         # Dropdown arrow
-        arrow_label = tk.Label(dropdown_container, text="▾",
+        arrow_label = tk.Label(inner_dropdown, text="▾",
                               font=('SF Pro Display', 10),
                               fg=self.secondary_fg,
                               bg=self.hover_color,
@@ -148,21 +197,27 @@ class SpotifyPlaylistAdder:
         self.playlist_button.bind('<Button-1>', self.show_playlist_menu)
         arrow_label.bind('<Button-1>', self.show_playlist_menu)
 
-        # Add button (prominent, Spotify green)
-        self.add_button = tk.Button(main_frame, text="Add to Playlist",
-                                   font=('SF Pro Display', 11, 'bold'),
-                                   fg='#ffffff', bg=self.accent_color,
-                                   activebackground='#1ed760',
-                                   activeforeground='#ffffff',
-                                   bd=0, relief='flat',
-                                   cursor='hand2',
-                                   height=2,
-                                   command=self.add_to_playlist)
-        self.add_button.pack(fill=tk.X, pady=(0, 8))
+        # Add button (prominent, Spotify green) - using Label for full color control
+        button_container = tk.Frame(main_frame, bg=self.accent_color, height=44)
+        button_container.pack(fill=tk.X, pady=(0, 8))
+        button_container.pack_propagate(False)
 
-        # Hover effects for add button
+        self.add_button = tk.Label(button_container, text="Add to Playlist",
+                                   font=('SF Pro Display', 11, 'bold'),
+                                   fg='#ffffff',
+                                   bg=self.accent_color,
+                                   cursor='hand2')
+        self.add_button.pack(fill=tk.BOTH, expand=True)
+
+        # Bind click and hover events
+        self.add_button.bind('<Button-1>', lambda e: self.add_to_playlist())
         self.add_button.bind('<Enter>', lambda e: self.add_button.config(bg='#1ed760'))
         self.add_button.bind('<Leave>', lambda e: self.add_button.config(bg=self.accent_color))
+
+        # Also bind to container for full clickable area
+        button_container.bind('<Button-1>', lambda e: self.add_to_playlist())
+        button_container.bind('<Enter>', lambda e: [self.add_button.config(bg='#1ed760'), button_container.config(bg='#1ed760')])
+        button_container.bind('<Leave>', lambda e: [self.add_button.config(bg=self.accent_color), button_container.config(bg=self.accent_color)])
 
         # Refresh button (minimal, bottom right)
         refresh_btn = tk.Label(main_frame, text="↻", font=('SF Pro Display', 14),
@@ -185,6 +240,8 @@ class SpotifyPlaylistAdder:
         config = load_config()
         config['selected_playlist'] = playlist_name
         save_config(config)
+        # Check if current track is in the newly selected playlist
+        threading.Thread(target=self.check_track_in_playlist, daemon=True).start()
 
     def load_playlists(self):
         """Load user's playlists from Spotify."""
@@ -226,7 +283,7 @@ class SpotifyPlaylistAdder:
             messagebox.showerror("Error", f"Failed to load playlists:\n{str(e)}")
 
     def monitor_current_track(self):
-        """Background thread to monitor currently playing track."""
+        """Background thread to monitor currently playing track and playback state."""
         while self.running:
             try:
                 current = self.sp.current_playback()
@@ -236,11 +293,19 @@ class SpotifyPlaylistAdder:
                     track_id = track['id']
                     track_name = track['name']
                     artists = ', '.join([artist['name'] for artist in track['artists']])
+                    is_playing = current['is_playing']
 
                     if track_id != self.current_track_id:
                         self.current_track_id = track_id
                         self.current_track = f"{track_name} - {artists}"
                         self.root.after(0, self.update_track_label)
+                        # Check if new track is in playlist
+                        threading.Thread(target=self.check_track_in_playlist, daemon=True).start()
+
+                    # Update play/pause button icon
+                    expected_icon = "⏸" if is_playing else "▶"
+                    if self.play_pause_btn['text'] != expected_icon:
+                        self.root.after(0, lambda: self.play_pause_btn.config(text=expected_icon))
                 else:
                     if self.current_track_id is not None:
                         self.current_track_id = None
@@ -260,22 +325,19 @@ class SpotifyPlaylistAdder:
             self.track_label.config(text="No track playing")
 
     def add_to_playlist(self):
-        """Add current track to selected playlist."""
+        """Add or remove current track from selected playlist."""
         if not self.current_track_id:
-            messagebox.showwarning("No Track", "No track is currently playing!")
+            # Show inline feedback instead of popup
+            self.add_button.config(text="No track playing", bg='#8b0000')
+            self.root.after(1500, self.update_button_state)
             return
 
         playlist_name = self.playlist_var.get()
-        if not playlist_name:
-            messagebox.showwarning("No Playlist", "Please select a playlist first!")
+        if not playlist_name or playlist_name == "No playlists found":
+            # Show inline feedback instead of popup
+            self.add_button.config(text="Select playlist first", bg='#8b0000')
+            self.root.after(1500, self.update_button_state)
             return
-
-        # Prevent adding the same track multiple times rapidly
-        if self.current_track_id == self.last_added_track:
-            response = messagebox.askyesno("Already Added",
-                                          "You just added this track. Add again?")
-            if not response:
-                return
 
         # Find playlist ID
         playlist_id = None
@@ -285,21 +347,97 @@ class SpotifyPlaylistAdder:
                 break
 
         if not playlist_id:
-            messagebox.showerror("Error", "Playlist not found!")
+            self.add_button.config(text="Playlist not found", bg='#8b0000')
+            self.root.after(1500, self.update_button_state)
             return
 
         try:
-            self.sp.playlist_add_items(playlist_id, [self.current_track_id])
-            self.last_added_track = self.current_track_id
-
-            # Visual feedback - sleek animation
-            original_text = self.add_button['text']
-            original_bg = self.add_button['bg']
-            self.add_button.config(text="✓ Added", bg='#1ed760')
-            self.root.after(1200, lambda: self.add_button.config(text=original_text, bg=original_bg))
+            if self.track_in_playlist:
+                # Remove from playlist
+                self.sp.playlist_remove_all_occurrences_of_items(playlist_id, [self.current_track_id])
+                self.track_in_playlist = False
+                self.add_button.config(text="✓ Removed", bg='#ff6b6b')
+                self.root.after(1200, self.update_button_state)
+            else:
+                # Add to playlist
+                self.sp.playlist_add_items(playlist_id, [self.current_track_id])
+                self.track_in_playlist = True
+                self.add_button.config(text="✓ Added", bg='#1ed760')
+                self.root.after(1200, self.update_button_state)
 
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to add track:\n{str(e)}")
+            print(f"Error modifying playlist: {e}")
+            self.add_button.config(text="Error", bg='#8b0000')
+            self.root.after(1500, self.update_button_state)
+
+    def update_button_state(self):
+        """Update the add/remove button based on current track status in playlist."""
+        if self.track_in_playlist:
+            self.add_button.config(text="Remove from Playlist", bg='#ff6b6b')
+        else:
+            self.add_button.config(text="Add to Playlist", bg=self.accent_color)
+
+    def check_track_in_playlist(self):
+        """Check if current track is in the selected playlist."""
+        if not self.current_track_id:
+            return
+
+        playlist_name = self.playlist_var.get()
+        if not playlist_name or playlist_name == "No playlists found":
+            return
+
+        # Find playlist ID
+        playlist_id = None
+        for name, pid in self.playlists:
+            if name == playlist_name:
+                playlist_id = pid
+                break
+
+        if not playlist_id:
+            return
+
+        try:
+            # Check if track is in playlist
+            results = self.sp.playlist_items(playlist_id, fields='items.track.id', limit=100)
+            track_ids = [item['track']['id'] for item in results['items'] if item['track']]
+
+            # Handle pagination if playlist has more than 100 tracks
+            while results['next']:
+                results = self.sp.next(results)
+                track_ids.extend([item['track']['id'] for item in results['items'] if item['track']])
+
+            self.track_in_playlist = self.current_track_id in track_ids
+            self.update_button_state()
+
+        except Exception as e:
+            print(f"Error checking track in playlist: {e}")
+
+    def toggle_play_pause(self):
+        """Toggle play/pause on Spotify."""
+        try:
+            playback = self.sp.current_playback()
+            if playback and playback['is_playing']:
+                self.sp.pause_playback()
+                self.play_pause_btn.config(text="▶")
+            else:
+                self.sp.start_playback()
+                self.play_pause_btn.config(text="⏸")
+        except Exception as e:
+            print(f"Error toggling playback: {e}")
+
+    def previous_track(self):
+        """Skip to previous track."""
+        try:
+            self.sp.previous_track()
+        except Exception as e:
+            print(f"Error going to previous track: {e}")
+
+    def next_track(self):
+        """Skip to next track."""
+        try:
+            self.sp.next_track()
+        except Exception as e:
+            print(f"Error going to next track: {e}")
 
     def on_close(self):
         """Handle window close event."""

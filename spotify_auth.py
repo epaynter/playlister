@@ -10,7 +10,7 @@ def get_spotify_client():
     Creates and returns an authenticated Spotify client.
     Handles OAuth flow and token management.
     """
-    scope = "user-read-currently-playing user-read-playback-state playlist-read-private playlist-read-collaborative playlist-modify-public playlist-modify-private user-library-read"
+    scope = "user-read-currently-playing user-read-playback-state user-modify-playback-state playlist-read-private playlist-read-collaborative playlist-modify-public playlist-modify-private user-library-read"
 
     # Load credentials from config
     client_id, client_secret = load_credentials()
